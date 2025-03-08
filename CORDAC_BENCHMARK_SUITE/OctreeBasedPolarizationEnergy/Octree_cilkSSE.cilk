@@ -1,0 +1,119 @@
+/*
+@author: Coded by Jesmin Jahan Tithi,  jtithi@cs.stonybrook.edu
+With the help of codes provided by Professor Rezaul Chowdhury
+
+*/
+#include"EpolLibSSE.h"
+#include <cilkview.h>
+using namespace std;
+int getMilliCount(){
+	timeb tb;
+	ftime(&tb);
+	int nCount = tb.millitm + (tb.time & 0xfffff) * 1000;
+	return nCount;
+}
+int withNaive=1;
+int getMilliSpan(int nTimeStart){
+	int nSpan = getMilliCount() - nTimeStart;
+	if(nSpan < 0)
+		nSpan += 0x100000 * 1000;
+	return nSpan;
+}
+char *getParamVal( int argc, char **argv, char *param )
+{
+  for ( int i = 1; i < argc - 1; i++ )
+    if ( !strcasecmp( argv[ i ], param ) ) return argv[ i + 1 ];
+
+  return NULL;
+}
+
+int cilk_main(int argc, char *argv[]){
+    fstream ofile;
+	//cilk::cilkview cv;
+
+	octree ob(argv[1],argv[2]);
+	char *pv = getParamVal( argc, argv, ( char * ) "-o" ); 
+    ofile.open (pv, fstream::out | fstream::app); 
+	pv = getParamVal( argc, argv, ( char * ) "-naive" ); 
+	withNaive=atoi(pv);
+	pv = getParamVal( argc, argv, ( char * ) "-e1" );
+	real e1,e2;
+	if(pv!=NULL){
+		e1=atof(pv);
+		ob.setEpsilon1(e1);
+     }		
+	pv = getParamVal( argc, argv, ( char * ) "-e2" );
+	if(pv!=NULL){
+		e2=atof(pv);
+		ob.setEpsilon2(e2);
+     }	
+    ob.sa= new real[ob.nStaticAtom];
+	memset(ob.sa,0,sizeof(real)*ob.nStaticAtom);
+	
+	ob.sA= new real[ob.numStaticAtomsOctreeNodes];
+	memset(ob.sA,0,sizeof(real)*ob.numStaticAtomsOctreeNodes);
+	
+	
+	int oTime=0;
+	int nTime=0;
+	
+	//cv.start();
+	int start = getMilliCount();
+    approxIntegrals(ob,ob.sOctree,0,ob.mOctree,0);
+	pushIntegralsToAtoms(ob,ob.sOctree,0,0);
+	oTime = getMilliSpan(start);
+	real d=(real)ob.BRmax/(real)ob.BRmin;
+	
+	
+	d=log(d);
+    real d2= log((real)ob.epsilon2Plus1);
+    ob.MEpsilon=ceil(d/d2);
+    calSQ(ob);
+    real energy=0;
+	start=0;
+	start = getMilliCount();
+	energy=-ApproxE_pol(ob,ob.sOctree,0,ob.sOctree,0, energy)*ob.tao*332;
+	//cv.stop();
+	//cv.dump("ParallelOctree");
+	oTime = oTime+getMilliSpan(start);
+	start=0;
+	if(withNaive==1){
+		cout<<"Aproximate polarization Energy:"<<energy<<endl; 
+		
+		start = getMilliCount();
+		ob.calculateBornRadi();
+		//ob.printBornRadi();
+		
+		real nEpol=ob.NaiveEPol()*332;
+		nTime=getMilliSpan(start);
+		
+		ob.calBornRadiErr();
+		
+		real x=fabs(nEpol-energy);	
+	    
+		ofile<<setw(6)<<fixed;	ofile<<argv[1]<<","<<ob.nStaticAtom<<","<<ob.nMovingAtom<<","<<ob.absErr<<","<<ob.perE/ob.nStaticAtom<<","<<energy<<","<<nEpol<<","<<x<<","<<(x)*100/nEpol<<","<<nTime<<","<<oTime<<endl;
+	}   
+		else {
+		ofile<<setw(6)<<fixed;
+		ofile<<argv[1]<<","<<ob.nStaticAtom<<","<<ob.nMovingAtom<<","<<energy<<","<<oTime<<","<<ob.epsilon1<<","<<ob.epsilon2<<endl;}
+		
+	//cv.dump("ParallelOctree");
+	freeMem(ob.satms);
+	freeMem(ob.matms);
+	freeMem(ob.sOctree);
+	freeMem(ob.mOctree);
+	freeMem(ob.bornRadi);
+	ofile.close();
+	return 0;
+	
+	/* real avg=0;
+	 for (int i=0;i<ob.nStaticAtom;i++)
+	 {
+      avg=avg+ob.satms[i].ra;
+
+	 }
+	 cout<<"Brmax: "<<ob.BRmax<<": "<<ob.BRmin<<"Avg:"<<avg<<endl;*/
+	 
+}	
+	
+	 
